@@ -53,11 +53,15 @@
 #   - Updated admin rights modifications to use dscl directly instead of dseditgroup.
 #   - Removed local user validation to allow mobile, MDM, and network-bound accounts.
 #   - Simplified and strengthened admin rights assignment for Jamf Pro compatibility.
+#
+# Version 1.3.1 - 2025-04-26
+#   - Added second-stage username sanitization inside main() to eliminate hidden whitespace issues before dscl operations.
+#   - Ensured reliable group modification even in Jamf Pro environments passing variables with unexpected formatting.
 #########################################################################################################################################################################
 
 # Global Variables
 LOG_FILE="/var/log/admin_rights_update.log"
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="1.3.1"
 
 # Logging Functions
 log_info() { printf "[%s] [INFO] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"; }
@@ -123,6 +127,9 @@ main() {
         log_error "Failed to retrieve logged-in user."
         return 1
     fi
+
+    # Re-sanitize user again to remove hidden characters before dscl
+    user=$(printf "%s" "$user" | tr -d '[:space:]')
 
     if [[ "$action" == "promote" ]]; then
         promote_to_admin "$user"
