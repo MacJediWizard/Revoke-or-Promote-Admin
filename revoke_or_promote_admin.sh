@@ -14,6 +14,7 @@
 #               - The script will:
 #                   - Detect the currently logged-in console user safely
 #                   - Validate the requested action
+#                   - Confirm the user is a local system account
 #                   - Add or remove the user from the admin group accordingly
 #                   - Log all actions, warnings, errors, and debug information into /var/log/admin_rights_update.log
 #
@@ -44,11 +45,15 @@
 #   - Ensured correct user targeting when promoting or revoking admin rights.
 #   - Improved resilience against FileVault and fast-user-switching session issues.
 #
+# Version 1.2.1 - 2025-04-26
+#   - Added validation to ensure detected user is a local system account using dscl.
+#   - Improved protection against network or mobile users that dseditgroup cannot modify.
+#   - Enhanced logging when user validation fails.
 #########################################################################################################################################################################
 
 # Global Variables
 LOG_FILE="/var/log/admin_rights_update.log"
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.2.1"
 
 # Logging Functions
 log_info() { printf "[%s] [INFO] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"; }
@@ -59,20 +64,28 @@ log_error() { printf "[%s] [ERROR] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | t
 get_logged_in_user() {
     local logged_in_user;
     logged_in_user=$(who | awk '/console/ { print $1 }')
-    
+
     if [[ -z "$logged_in_user" ]]; then
         log_error "Unable to determine logged-in console user."
         return 1
     fi
-    
-    # Confirm user actually exists
-    if ! id "$logged_in_user" >/dev/null 2>&1; then
-        log_error "Detected console user $logged_in_user does not exist in the local system."
-        return 1
-    fi
-    
+
+    logged_in_user=$(printf "%s" "$logged_in_user" | tr -d '[:space:]')
+
     log_info "Detected logged-in user shortname: $logged_in_user"
     printf "%s" "$logged_in_user"
+}
+
+# Function to validate if user is local
+validate_local_user() {
+    local user="$1"
+
+    if ! dscl . -read "/Users/$user" &>/dev/null; then
+        log_error "User $user is not a local system user. Cannot modify admin rights."
+        return 1
+    fi
+
+    log_info "Confirmed $user is a local user."
 }
 
 # Function to revoke admin rights
@@ -116,6 +129,11 @@ main() {
 
     if ! user=$(get_logged_in_user); then
         log_error "Failed to retrieve logged-in user."
+        return 1
+    fi
+
+    if ! validate_local_user "$user"; then
+        log_error "User validation failed for $user."
         return 1
     fi
 

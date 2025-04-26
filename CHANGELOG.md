@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.2.1] - 2025-04-26
+### Fixed
+- Added validation step to confirm that the detected console user is a local system user before attempting admin modifications.
+- Prevents dseditgroup failures when user accounts are network-bound or mobile-managed.
+- Improved logging clarity during user validation and action steps.
+- Bumped internal script version to 1.2.1.
+
+---
+
 ## [1.2.0] - 2025-04-26
 ### Changed
 - Replaced scutil-based user detection with `who | awk '/console/'` for improved reliability.
