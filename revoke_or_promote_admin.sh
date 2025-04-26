@@ -14,12 +14,11 @@
 #               - The script will:
 #                   - Detect the currently logged-in console user safely
 #                   - Validate the requested action
-#                   - Confirm the user is a local system account
-#                   - Add or remove the user from the admin group accordingly
+#                   - Add or remove the user from the admin group using dscl
 #                   - Log all actions, warnings, errors, and debug information into /var/log/admin_rights_update.log
 #
 # Notes:
-# - Must be run as root (required for dseditgroup changes).
+# - Must be run as root (required for group modifications).
 # - Designed for use inside Jamf Pro policies with script parameters or standalone use.
 #
 # License:
@@ -49,11 +48,16 @@
 #   - Added validation to ensure detected user is a local system account using dscl.
 #   - Improved protection against network or mobile users that dseditgroup cannot modify.
 #   - Enhanced logging when user validation fails.
+#
+# Version 1.3.0 - 2025-04-26
+#   - Updated admin rights modifications to use dscl directly instead of dseditgroup.
+#   - Removed local user validation to allow mobile, MDM, and network-bound accounts.
+#   - Simplified and strengthened admin rights assignment for Jamf Pro compatibility.
 #########################################################################################################################################################################
 
 # Global Variables
 LOG_FILE="/var/log/admin_rights_update.log"
-SCRIPT_VERSION="1.2.1"
+SCRIPT_VERSION="1.3.0"
 
 # Logging Functions
 log_info() { printf "[%s] [INFO] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"; }
@@ -76,23 +80,11 @@ get_logged_in_user() {
     printf "%s" "$logged_in_user"
 }
 
-# Function to validate if user is local
-validate_local_user() {
-    local user="$1"
-
-    if ! dscl . -read "/Users/$user" &>/dev/null; then
-        log_error "User $user is not a local system user. Cannot modify admin rights."
-        return 1
-    fi
-
-    log_info "Confirmed $user is a local user."
-}
-
 # Function to revoke admin rights
 revoke_admin_rights() {
     local user="$1"
 
-    if dseditgroup -o edit -d "$user" -t user admin; then
+    if dscl . -delete /Groups/admin GroupMembership "$user"; then
         log_info "Successfully revoked admin rights for user: $user"
     else
         log_error "Failed to revoke admin rights for user: $user"
@@ -104,7 +96,7 @@ revoke_admin_rights() {
 promote_to_admin() {
     local user="$1"
 
-    if dseditgroup -o edit -a "$user" -t user admin; then
+    if dscl . -append /Groups/admin GroupMembership "$user"; then
         log_info "Successfully granted admin rights to user: $user"
     else
         log_error "Failed to promote user: $user to admin."
@@ -129,11 +121,6 @@ main() {
 
     if ! user=$(get_logged_in_user); then
         log_error "Failed to retrieve logged-in user."
-        return 1
-    fi
-
-    if ! validate_local_user "$user"; then
-        log_error "User validation failed for $user."
         return 1
     fi
 
