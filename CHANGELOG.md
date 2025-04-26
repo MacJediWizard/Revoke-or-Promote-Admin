@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.1.0] - 2025-04-26
+### Fixed
+- Corrected logged-in user detection to sanitize whitespace and line breaks.
+- Added validation step to confirm user exists before attempting group changes.
+- Fixed dseditgroup error: "Record was not found" during promote/revoke operations.
+- Improved logging for safer user operations and better troubleshooting.
+
+---
+
 ## [1.0.0] - 2025-04-26
 ### Added
 - Initial creation of `revoke_or_promote_admin.sh`.

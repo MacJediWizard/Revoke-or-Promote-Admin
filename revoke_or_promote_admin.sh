@@ -1,6 +1,7 @@
 #!/bin/bash
 
 #########################################################################################################################################################################
+#
 # MacJediWizard Consulting, Inc.
 # Copyright (c) 2025 MacJediWizard Consulting, Inc.
 # All rights reserved.
@@ -30,6 +31,13 @@
 #   - Added support for revoking or promoting admin rights via command-line argument or Jamf parameter.
 #   - Integrated logging system for audit purposes.
 #   - Implemented full validation and error handling.
+#
+# Version 1.1.0 - 2025-04-26
+#   - Fixed issue where dseditgroup could fail with "Record was not found."
+#   - Updated get_logged_in_user() to sanitize username and trim whitespace.
+#   - Added verification that the detected user exists using id command before modifying group membership.
+#   - Improved logging for user detection and validation process.
+#
 #########################################################################################################################################################################
 
 # Global Variables
@@ -44,14 +52,23 @@ log_error() { printf "[%s] [ERROR] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | t
 # Function to get the current logged-in user
 get_logged_in_user() {
     local logged_in_user;
-    logged_in_user=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && !/loginwindow/ { print $3 }')
-
+    logged_in_user=$( scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && !/loginwindow/ { print $3 }' )
+    
     if [[ -z "$logged_in_user" ]]; then
         log_error "Unable to determine logged-in user."
         return 1
     fi
-
-    log_info "Detected logged-in user: $logged_in_user"
+    
+    # Trim any whitespace, just in case
+    logged_in_user=$(printf "%s" "$logged_in_user" | tr -d '[:space:]')
+    
+    # Confirm user actually exists in the system
+    if ! id "$logged_in_user" >/dev/null 2>&1; then
+        log_error "Logged-in user $logged_in_user does not exist in the local system records."
+        return 1
+    fi
+    
+    log_info "Detected logged-in user shortname: $logged_in_user"
     printf "%s" "$logged_in_user"
 }
 
