@@ -12,14 +12,16 @@
 # Description: - This script promotes or revokes admin rights for the current logged-in user on macOS.
 #               - The action ("promote" or "revoke") can be passed as a command-line argument or as Jamf Pro Parameter 4.
 #               - The script will:
-#                   - Detect the currently logged-in console user safely
+#                   - Detect the currently logged-in console user safely using scutil
 #                   - Validate the requested action
 #                   - Add or remove the user from the admin group using dseditgroup
 #                   - Log all actions, warnings, errors, and debug information into /var/log/admin_rights_update.log
+#                   - Allow optional DEBUG_MODE for detailed troubleshooting
 #
 # Notes:
 # - Must be run as root (required for group modifications).
 # - Designed for use inside Jamf Pro policies with script parameters or standalone use.
+# - DEBUG_MODE can be enabled internally to show additional debug output.
 #
 # License:
 # This script is licensed under the MIT License.
@@ -28,45 +30,35 @@
 # Change Log:
 # Version 1.0.0 - 2025-04-26
 #   - Initial creation of script.
-#   - Added support for revoking or promoting admin rights via command-line argument or Jamf parameter.
-#   - Integrated logging system for audit purposes.
-#   - Implemented full validation and error handling.
 #
 # Version 1.1.0 - 2025-04-26
-#   - Improved console user detection and safe promotion/revocation using dseditgroup.
-#   - Switched to dseditgroup for safe operation without eDS errors.
-#   - Cleaned up and finalized script for Jamf Pro policy execution.
+#   - Added optional DEBUG_MODE for expanded internal logging.
+#   - Improved console user detection using scutil directly without wrapping function.
+#   - Polished admin rights promotion and revocation with dseditgroup.
+#   - Finalized for Jamf Pro deployment with structured, timestamped logging.
+#
 #########################################################################################################################################################################
 
 # Global Variables
 LOG_FILE="/var/log/admin_rights_update.log"
 SCRIPT_VERSION="1.1.0"
+DEBUG_MODE="false"
 
 # Logging Functions
 log_info() { printf "[%s] [INFO] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"; }
 log_warn() { printf "[%s] [WARN] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"; }
 log_error() { printf "[%s] [ERROR] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"; }
-
-# Function to get the current logged-in user
-get_logged_in_user() {
-    local logged_in_user
-    logged_in_user=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && !/loginwindow/ { print $3 }')
-
-    if [[ -z "$logged_in_user" ]]; then
-        log_error "Unable to determine logged-in console user."
-        return 1
+log_debug() {
+    if [[ "$DEBUG_MODE" == "true" ]]; then
+        printf "[%s] [DEBUG] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"
     fi
-
-    logged_in_user=$(printf "%s" "$logged_in_user" | tr -d '[:space:]')
-
-    log_info "Detected logged-in user shortname: $logged_in_user"
-    printf "%s" "$logged_in_user"
 }
 
 # Function to revoke admin rights
 revoke_admin_rights() {
     local user="$1"
 
+    log_debug "Attempting to revoke admin rights from user: $user"
     if dseditgroup -o edit -d "$user" -t user admin; then
         log_info "Successfully revoked admin rights for user: $user"
     else
@@ -78,6 +70,7 @@ revoke_admin_rights() {
 promote_to_admin() {
     local user="$1"
 
+    log_debug "Attempting to promote user: $user to admin"
     if dseditgroup -o edit -a "$user" -t user admin; then
         log_info "Successfully granted admin rights to user: $user"
     else
@@ -90,6 +83,8 @@ main() {
     local action="$1"
     local user
 
+    log_info "Starting admin rights update script version $SCRIPT_VERSION"
+
     if [[ -z "$action" ]]; then
         log_error "No action specified. Usage: $0 [promote|revoke]"
         return 1
@@ -100,18 +95,23 @@ main() {
         return 1
     fi
 
-    if ! user=$(get_logged_in_user); then
+    user=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && !/loginwindow/ { print $3 }')
+
+    if [[ -z "$user" ]]; then
         log_error "Failed to retrieve logged-in user."
         return 1
     fi
 
-    user=$(printf "%s" "$user" | tr -d '[:space:]')
+    log_info "Detected logged-in user: $user"
+    log_debug "Detected user raw value: '$user'"
 
     if [[ "$action" == "promote" ]]; then
         promote_to_admin "$user"
     elif [[ "$action" == "revoke" ]]; then
         revoke_admin_rights "$user"
     fi
+
+    log_info "Admin rights update script completed."
 }
 
 # Detecting input
