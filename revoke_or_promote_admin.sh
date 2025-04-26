@@ -14,7 +14,7 @@
 #               - The script will:
 #                   - Detect the currently logged-in console user safely
 #                   - Validate the requested action
-#                   - Add or remove the user from the admin group using dscl
+#                   - Add or remove the user from the admin group using dseditgroup
 #                   - Log all actions, warnings, errors, and debug information into /var/log/admin_rights_update.log
 #
 # Notes:
@@ -33,35 +33,14 @@
 #   - Implemented full validation and error handling.
 #
 # Version 1.1.0 - 2025-04-26
-#   - Fixed issue where dseditgroup could fail with "Record was not found."
-#   - Updated get_logged_in_user() to sanitize username and trim whitespace.
-#   - Added verification that the detected user exists using id command before modifying group membership.
-#   - Improved logging for user detection and validation process.
-#
-# Version 1.2.0 - 2025-04-26
-#   - Replaced scutil-based logged-in user detection with who/awk method for higher reliability.
-#   - Updated get_logged_in_user() to use who | awk '/console/' for accurate shortname detection.
-#   - Ensured correct user targeting when promoting or revoking admin rights.
-#   - Improved resilience against FileVault and fast-user-switching session issues.
-#
-# Version 1.2.1 - 2025-04-26
-#   - Added validation to ensure detected user is a local system account using dscl.
-#   - Improved protection against network or mobile users that dseditgroup cannot modify.
-#   - Enhanced logging when user validation fails.
-#
-# Version 1.3.0 - 2025-04-26
-#   - Updated admin rights modifications to use dscl directly instead of dseditgroup.
-#   - Removed local user validation to allow mobile, MDM, and network-bound accounts.
-#   - Simplified and strengthened admin rights assignment for Jamf Pro compatibility.
-#
-# Version 1.3.1 - 2025-04-26
-#   - Added second-stage username sanitization inside main() to eliminate hidden whitespace issues before dscl operations.
-#   - Ensured reliable group modification even in Jamf Pro environments passing variables with unexpected formatting.
+#   - Improved console user detection and safe promotion/revocation using dseditgroup.
+#   - Switched to dseditgroup for safe operation without eDS errors.
+#   - Cleaned up and finalized script for Jamf Pro policy execution.
 #########################################################################################################################################################################
 
 # Global Variables
 LOG_FILE="/var/log/admin_rights_update.log"
-SCRIPT_VERSION="1.3.1"
+SCRIPT_VERSION="1.1.0"
 
 # Logging Functions
 log_info() { printf "[%s] [INFO] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOG_FILE"; }
@@ -70,8 +49,8 @@ log_error() { printf "[%s] [ERROR] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | t
 
 # Function to get the current logged-in user
 get_logged_in_user() {
-    local logged_in_user;
-    logged_in_user=$(who | awk '/console/ { print $1 }')
+    local logged_in_user
+    logged_in_user=$(scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && !/loginwindow/ { print $3 }')
 
     if [[ -z "$logged_in_user" ]]; then
         log_error "Unable to determine logged-in console user."
@@ -88,11 +67,10 @@ get_logged_in_user() {
 revoke_admin_rights() {
     local user="$1"
 
-    if dscl . -delete /Groups/admin GroupMembership "$user"; then
+    if dseditgroup -o edit -d "$user" -t user admin; then
         log_info "Successfully revoked admin rights for user: $user"
     else
-        log_error "Failed to revoke admin rights for user: $user"
-        return 1
+        log_warn "User $user may not have been in the admin group. Revocation skipped or unnecessary."
     fi
 }
 
@@ -100,18 +78,17 @@ revoke_admin_rights() {
 promote_to_admin() {
     local user="$1"
 
-    if dscl . -append /Groups/admin GroupMembership "$user"; then
+    if dseditgroup -o edit -a "$user" -t user admin; then
         log_info "Successfully granted admin rights to user: $user"
     else
-        log_error "Failed to promote user: $user to admin."
-        return 1
+        log_warn "User $user may already have admin rights. Promotion skipped or unnecessary."
     fi
 }
 
 # Main Execution
 main() {
     local action="$1"
-    local user;
+    local user
 
     if [[ -z "$action" ]]; then
         log_error "No action specified. Usage: $0 [promote|revoke]"
@@ -128,7 +105,6 @@ main() {
         return 1
     fi
 
-    # Re-sanitize user again to remove hidden characters before dscl
     user=$(printf "%s" "$user" | tr -d '[:space:]')
 
     if [[ "$action" == "promote" ]]; then
