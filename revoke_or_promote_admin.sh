@@ -38,6 +38,12 @@
 #   - Added verification that the detected user exists using id command before modifying group membership.
 #   - Improved logging for user detection and validation process.
 #
+# Version 1.2.0 - 2025-04-26
+#   - Replaced scutil-based logged-in user detection with who/awk method for higher reliability.
+#   - Updated get_logged_in_user() to use who | awk '/console/' for accurate shortname detection.
+#   - Ensured correct user targeting when promoting or revoking admin rights.
+#   - Improved resilience against FileVault and fast-user-switching session issues.
+#
 #########################################################################################################################################################################
 
 # Global Variables
@@ -52,19 +58,16 @@ log_error() { printf "[%s] [ERROR] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | t
 # Function to get the current logged-in user
 get_logged_in_user() {
     local logged_in_user;
-    logged_in_user=$( scutil <<< "show State:/Users/ConsoleUser" | awk '/Name :/ && !/loginwindow/ { print $3 }' )
+    logged_in_user=$(who | awk '/console/ { print $1 }')
     
     if [[ -z "$logged_in_user" ]]; then
-        log_error "Unable to determine logged-in user."
+        log_error "Unable to determine logged-in console user."
         return 1
     fi
     
-    # Trim any whitespace, just in case
-    logged_in_user=$(printf "%s" "$logged_in_user" | tr -d '[:space:]')
-    
-    # Confirm user actually exists in the system
+    # Confirm user actually exists
     if ! id "$logged_in_user" >/dev/null 2>&1; then
-        log_error "Logged-in user $logged_in_user does not exist in the local system records."
+        log_error "Detected console user $logged_in_user does not exist in the local system."
         return 1
     fi
     

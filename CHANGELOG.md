@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.2.0] - 2025-04-26
+### Changed
+- Replaced scutil-based user detection with `who | awk '/console/'` for improved reliability.
+- Updated `get_logged_in_user()` to guarantee accurate shortname detection.
+- Fixed failures when promoting or revoking admin rights during fast user switching or FileVault unlock sessions.
+- Improved logging consistency for detected user names.
+
+---
+
 ## [1.1.0] - 2025-04-26
 ### Fixed
 - Corrected logged-in user detection to sanitize whitespace and line breaks.
